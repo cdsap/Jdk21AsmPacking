@@ -1,25 +1,126 @@
 package com.awesomeapp.module_0_10
 
-data class GenModel1402(
+import javax.inject.Inject
+import javax.inject.Singleton
+import dagger.hilt.android.lifecycle.HiltViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+
+data class GenModel_1402_(
     val id: Long = 0L,
     val name: String = "",
     val value: Double = 0.0,
     val active: Boolean = false,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val metadata: Map<String, Any> = emptyMap()
 )
 
-interface GenService1402 {
-    fun process(model: GenModel1402): GenModel1402
-    fun validate(model: GenModel1402): Boolean
+sealed class GenEvent_1402_ {
+    data class Load(val id: Long) : GenEvent_1402_()
+    data class Update(val model: GenModel_1402_) : GenEvent_1402_()
+    data class Delete(val id: Long) : GenEvent_1402_()
+    data object Refresh : GenEvent_1402_()
+    data class Search(val query: String) : GenEvent_1402_()
+    data class Filter(val predicate: String) : GenEvent_1402_()
 }
 
-class GenServiceImpl1402 : GenService1402 {
-    override fun process(model: GenModel1402): GenModel1402 = model.copy(active = true)
-    override fun validate(model: GenModel1402): Boolean = model.name.isNotEmpty()
+sealed class GenState_1402_ {
+    data object Idle : GenState_1402_()
+    data object Loading : GenState_1402_()
+    data class Success(val items: List<GenModel_1402_>) : GenState_1402_()
+    data class Error(val message: String, val cause: Throwable? = null) : GenState_1402_()
+    data class Partial(val items: List<GenModel_1402_>, val hasMore: Boolean) : GenState_1402_()
 }
 
-sealed class GenResult1402 {
-    data class Success(val data: GenModel1402) : GenResult1402()
-    data class Error(val message: String) : GenResult1402()
-    data object Loading : GenResult1402()
+interface GenRepository_1402_ {
+    suspend fun getAll(): List<GenModel_1402_>
+    suspend fun getById(id: Long): GenModel_1402_?
+    suspend fun save(model: GenModel_1402_): GenModel_1402_
+    suspend fun delete(id: Long): Boolean
+    suspend fun search(query: String): List<GenModel_1402_>
+}
+
+@Singleton
+class GenRepositoryImpl_1402_ @Inject constructor() : GenRepository_1402_ {
+    private val store = mutableMapOf<Long, GenModel_1402_>()
+    override suspend fun getAll(): List<GenModel_1402_> = store.values.toList()
+    override suspend fun getById(id: Long): GenModel_1402_? = store[id]
+    override suspend fun save(model: GenModel_1402_): GenModel_1402_ { store[model.id] = model; return model }
+    override suspend fun delete(id: Long): Boolean = store.remove(id) != null
+    override suspend fun search(query: String): List<GenModel_1402_> = store.values.filter { it.name.contains(query) }
+}
+
+interface GenUseCase_1402_<in P, out R> {
+    suspend operator fun invoke(params: P): R
+}
+
+class GenGetAllUseCase_1402_ @Inject constructor(
+    private val repository: GenRepositoryImpl_1402_
+) : GenUseCase_1402_<Unit, List<GenModel_1402_>> {
+    override suspend fun invoke(params: Unit): List<GenModel_1402_> = repository.getAll()
+}
+
+class GenSaveUseCase_1402_ @Inject constructor(
+    private val repository: GenRepositoryImpl_1402_
+) : GenUseCase_1402_<GenModel_1402_, GenModel_1402_> {
+    override suspend fun invoke(params: GenModel_1402_): GenModel_1402_ = repository.save(params)
+}
+
+class GenDeleteUseCase_1402_ @Inject constructor(
+    private val repository: GenRepositoryImpl_1402_
+) : GenUseCase_1402_<Long, Boolean> {
+    override suspend fun invoke(params: Long): Boolean = repository.delete(params)
+}
+
+class GenSearchUseCase_1402_ @Inject constructor(
+    private val repository: GenRepositoryImpl_1402_
+) : GenUseCase_1402_<String, List<GenModel_1402_>> {
+    override suspend fun invoke(params: String): List<GenModel_1402_> = repository.search(params)
+}
+
+abstract class GenMapper_1402_<in I, out O> {
+    abstract fun map(input: I): O
+    fun mapList(input: List<I>): List<O> = input.map { map(it) }
+}
+
+class GenModelToStringMapper_1402_ : GenMapper_1402_<GenModel_1402_, String>() {
+    override fun map(input: GenModel_1402_): String = "${input.id}:${input.name}"
+}
+
+class GenStringToModelMapper_1402_ : GenMapper_1402_<String, GenModel_1402_>() {
+    override fun map(input: String): GenModel_1402_ {
+        val parts = input.split(":")
+        return GenModel_1402_(id = parts[0].toLongOrNull() ?: 0L, name = parts.getOrElse(1) { "" })
+    }
+}
+
+@HiltViewModel
+class GenViewModel_1402_ @Inject constructor(
+    private val getAllUseCase: GenGetAllUseCase_1402_,
+    private val saveUseCase: GenSaveUseCase_1402_,
+    private val deleteUseCase: GenDeleteUseCase_1402_,
+    private val searchUseCase: GenSearchUseCase_1402_
+) : ViewModel() {
+    private val _state = MutableStateFlow<GenState_1402_>(GenState_1402_.Idle)
+    val state: StateFlow<GenState_1402_> = _state.asStateFlow()
+
+    fun onEvent(event: GenEvent_1402_) {
+        when (event) {
+            is GenEvent_1402_.Load -> loadAll()
+            is GenEvent_1402_.Update -> save(event.model)
+            is GenEvent_1402_.Delete -> delete(event.id)
+            is GenEvent_1402_.Refresh -> loadAll()
+            is GenEvent_1402_.Search -> search(event.query)
+            is GenEvent_1402_.Filter -> loadAll()
+        }
+    }
+
+    private fun loadAll() { viewModelScope.launch { _state.value = GenState_1402_.Loading; _state.value = GenState_1402_.Success(getAllUseCase(Unit)) } }
+    private fun save(model: GenModel_1402_) { viewModelScope.launch { saveUseCase(model); loadAll() } }
+    private fun delete(id: Long) { viewModelScope.launch { deleteUseCase(id); loadAll() } }
+    private fun search(query: String) { viewModelScope.launch { _state.value = GenState_1402_.Success(searchUseCase(query)) } }
 }
