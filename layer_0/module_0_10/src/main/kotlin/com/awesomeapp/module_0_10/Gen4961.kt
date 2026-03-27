@@ -1,0 +1,25 @@
+package com.awesomeapp.module_0_10
+
+data class GenModel4961(
+    val id: Long = 0L,
+    val name: String = "",
+    val value: Double = 0.0,
+    val active: Boolean = false,
+    val tags: List<String> = emptyList()
+)
+
+interface GenService4961 {
+    fun process(model: GenModel4961): GenModel4961
+    fun validate(model: GenModel4961): Boolean
+}
+
+class GenServiceImpl4961 : GenService4961 {
+    override fun process(model: GenModel4961): GenModel4961 = model.copy(active = true)
+    override fun validate(model: GenModel4961): Boolean = model.name.isNotEmpty()
+}
+
+sealed class GenResult4961 {
+    data class Success(val data: GenModel4961) : GenResult4961()
+    data class Error(val message: String) : GenResult4961()
+    data object Loading : GenResult4961()
+}
